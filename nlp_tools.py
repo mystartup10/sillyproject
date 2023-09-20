@@ -11,12 +11,15 @@ mean_feature_vector = numpy.asarray([2.96562195e-01, 4.03184026e-01, 0.00000000e
 
 std_feature_vector =  numpy.asarray([0.49554962, 0.61514539, 0.01, 0.49025708, 0.61415344, 0.01, 0.63884366, 0.78571159, 0.01, 0.51067924, 0.61547154, 0.01, 0.21814735, 0.20856784, 0.28316221, 0.2770144, 0.01373707, 0.12397484, 0.0552241, 0.03703553, 0.22331558, 0.0944486, 0.0462641, 0.29226318, 0.17671695, 0.10085059, 0.05579286, 0.31407589, 0.14722739, 0.02853682, 0.2448494, 0.03326115, 0.12569752, 0.05854797, 0.03541771, 0.1909824, 0.07585674, 0.0600559, 0.28556755, 0.16632196, 0.11589559, 0.04712084, 0.2748251, 0.12178376, 0.0249551, 0.25520995, 0.03505171, 0.17603439, 0.07924691, 0.05013117, 0.28841811, 0.11690302, 0.07141439, 0.3811253, 0.2390068, 0.15077953, 0.07136076, 0.39477608, 0.18730916, 0.03574936, 0.33551174, 0.03352964, 0.15809451, 0.07342678, 0.04543759, 0.2533873, 0.10578044, 0.06910371, 0.29847983, 0.20470271, 0.13351575, 0.06620995, 0.26295692, 0.16042583, 0.03404612, 0.28902417, 1.0670743, 2.14937806, 2.31377745, 2.00574207], dtype='float32')
 
+movie_scripts_count = 615
+
+
 class NLPTools():
     def __init__(self, state):
         # Load dictionary
         self.raw_dict = cPickle.load(open(state['dictionary'], 'r'))
         # There are 614 movie scripts, but we add one to inverse-document frequency calculations
-        self.document_count = 614 + 1 
+        self.document_count = movie_scripts_count
 
         # Dictionaries to convert str to idx and vice-versa
         self.str_to_idx = dict([(tok, tok_id) for tok, tok_id, _, _ in self.raw_dict])
@@ -25,23 +28,29 @@ class NLPTools():
         self.idx_to_polarity = dict()
         self.document_freq = dict([(tok_id, df) for _, tok_id, _, df in self.raw_dict])
 
-        for key, idx in self.str_to_idx.iteritems():
-            r = numpy.zeros((3))
-            l = list(swn.senti_synsets(key))
-            if l and len(l) > 0:
-                r[0] = l[0].neg_score()
-                r[1] = l[0].obj_score()
-                r[1] = l[0].pos_score()
-
-            self.idx_to_polarity[idx] = r
-
+        try:
+            for key, idx in self.str_to_idx.iteritems():
+                r = numpy.zeros((3))
+                l = list(swn.senti_synsets(key))
+                if l and len(l) > 0:
+                    r[0] = l[0].neg_score()
+                    r[1] = l[0].obj_score()
+                    r[1] = l[0].pos_score()
+    
+                self.idx_to_polarity[idx] = r
+    
+                self.idx_to_polarity[idx+1] = r
+        except:
+            print("Something clearly went wrong!")
+    
+        
         # Build list of swear words and bad words
         # Taken on July 26, 2015 from https://github.com/shutterstock
         # /List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/blob/master/en
         bad_words = open('bad_words_list.txt', 'r').readlines()
         bad_words_set = set()
         for word in bad_words:
-            bad_words_set.add(word.strip())
+            bad_words_set.add(word.strip().strip())
 
 
         self.idx_to_bad_word = dict()
@@ -58,16 +67,21 @@ class NLPTools():
                        for post in dlg_tagger_posts]
         dlg_tagger_size = int(len(dlg_tagger_featuresets) * 0.1)
         dlg_tagger_train_set, dlg_tagger_test_set = dlg_tagger_featuresets[dlg_tagger_size:], dlg_tagger_featuresets[:dlg_tagger_size]
+
+        dlg_tagger_train_set = None # Reset variable here
         self.dlg_tagger_classifier = nltk.NaiveBayesClassifier.train(dlg_tagger_train_set)
 
         # Print accuracy on test set
         #print(nltk.classify.accuracy(self.dlg_tagger_classifier, dlg_tagger_test_set))
 
     def dialogue_act_features(self, post):
-        features = {}
-        for word in nltk.word_tokenize(post):
-            features['contains({})'.format(word.lower())] = True
-        return features
+        try:
+            features = {}
+            for word in nltk.word_tokenize(post):
+                features['contains({})'.format(word.lower())] = True
+            return features
+        except:
+            pass
 
     def get_features(self, prev_sentence, next_sentence, token_counter):
         # Get negative, objective and positive sentiment polarities
@@ -133,4 +147,7 @@ class NLPTools():
         # 3 + 3 + 3 + 3 + 1 + 1 + 1 + 1 + 15 + 15 + 15 + 15 + 1 + 1 + 1 + 1
         r = numpy.concatenate([prev_scores, next_scores, (prev_scores - next_scores), numpy.abs(prev_scores - next_scores), prev_bad_words, next_bad_words, (prev_bad_words-next_bad_words), numpy.abs(prev_bad_words - next_bad_words), prev_probabilities, next_probabilities, (prev_probabilities-next_probabilities), numpy.abs(prev_probabilities-next_probabilities), prev_tf_idf, next_tf_idf, prev_tf_idf - next_tf_idf, numpy.abs(prev_tf_idf-next_tf_idf)], axis=0).astype('float32')
 
-        return (r - mean_feature_vector)/std_feature_vector
+        try:
+            return (r - mean_feature_vector)/std_feature_vector
+        except Exeption as e:
+            print(e)
